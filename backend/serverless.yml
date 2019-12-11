@@ -3,11 +3,11 @@ service:
 
 plugins:
   - serverless-webpack
-#  - serverless-dynamodb-local
+  - serverless-dynamodb-local
   - serverless-offline
 #  - serverless-reqvalidator-plugin
 #  - serverless-aws-documentation
-#  - serverless-iam-roles-per-function
+  - serverless-iam-roles-per-function
 
 provider:
   name: aws
@@ -20,6 +20,23 @@ provider:
     lambda: true
     apiGateway: true
 
+  environment:
+    GAME_REQUEST_TABLE: game_request-${self:provider.stage}
+    GAME_REQUEST_SORT_INDEX: game_req_createdAt-${self:provider.stage}
+    ACTIVE_GAME_TABLE: active_game-${self:provider.stage}
+
+custom:
+  serverless-offline:
+    port: 3003
+
+  dynamodb:
+    stages:
+      - dev
+    start:
+      port: 8000
+      inMemory: true
+      migrate: true
+
 functions:
 
   ConnectGameHandler:
@@ -27,6 +44,15 @@ functions:
     events:
       - websocket:
           route: $connect
+    iamRoleStatements:
+      - Effect: Allow
+        Action:
+          - dynamodb:Query
+        Resource: arn:aws:dynamodb:${self:provider.region}:*:table/${self:provider.environment.GAME_REQUEST_TABLE}/index/${self:provider.environment.GAME_REQUEST_SORT_INDEX}
+      - Effect: Allow
+        Action:
+          - dynamodb:PutItem
+        Resource: arn:aws:dynamodb:${self:provider.region}:*:table/${self:provider.environment.GAME_REQUEST_TABLE}
 #          TODO: need auth
 
   DisconnectGameHandler:
@@ -43,8 +69,8 @@ functions:
           route: $default
 #          TODO: need auth
 
-#resources:
-#  Resources:
+resources:
+  Resources:
 #    GatewayResponseDefault4XX:
 #      Type: AWS::ApiGateway::GatewayResponse
 #      Properties:
@@ -55,3 +81,49 @@ functions:
 #        ResponseType: DEFAULT_4XX
 #        RestApiId:
 #          Ref: ApiGatewayRestApi
+
+    GameRequestTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        AttributeDefinitions:
+          - AttributeName: userId
+            AttributeType: S
+          - AttributeName: createdAt
+            AttributeType: S
+        KeySchema:
+          - AttributeName: userId
+            KeyType: HASH
+          - AttributeName: createdAt
+            KeyType: RANGE
+        BillingMode: PAY_PER_REQUEST
+        TableName: ${self:provider.environment.GAME_REQUEST_TABLE}
+
+#        TODO: use some partition key like (game config, )
+
+        GlobalSecondaryIndexes:
+          - IndexName: ${self:provider.environment.GAME_REQUEST_SORT_INDEX}
+            KeySchema:
+              - AttributeName: createdAt
+                KeyType: RANGE
+            Projection:
+              ProjectionType: ALL
+
+#    ActiveGameTable:
+#      Type: AWS::DynamoDB::Table
+#      Properties:
+#        AttributeDefinitions:
+#          - AttributeName: userId
+#            AttributeType: S
+#          - AttributeName: createdAt
+#            AttributeType: S
+#          - AttributeName: updatedAt
+#            AttributeType: S
+#        KeySchema:
+#          - AttributeName: userId
+#            KeyType: HASH
+#          - AttributeName: createdAt
+#            KeyType: RANGE
+#          - AttributeName: updatedAt
+#            KeyType: RANGE
+#        BillingMode: PAY_PER_REQUEST
+#        TableName: ${self:provider.environment.ACTIVE_GAME_TABLE}
